@@ -4,6 +4,7 @@ import csv
 import re
 import argparse
 from bs4 import BeautifulSoup
+import file_merge
 
 def prepare_column_names(html_names):
     names = []
@@ -107,8 +108,8 @@ def prepare_url_pos(pos):
 
 def browse_and_scrape(main_url, list_of_satellites):
     print(list_of_satellites)
-    # prepare url for scraping
     for satellite in list_of_satellites:
+        # prepare url for scraping
         formated_sat = prepare_url_pos(satellite)
         url = main_url + "pos-" + formated_sat + ".php"
         try:
@@ -124,6 +125,7 @@ def browse_and_scrape(main_url, list_of_satellites):
 
 # find all orbital possitions available in file satellites.xml
 def find_orbital_pos(satellites_xml_path):
+    # orbitals decimal separator are written like 1.0 in .xml so we scrap them directly
     list_of_obital_pos = ["0.8W", "0.6W"]
 
     infile = open(satellites_xml_path, "r", encoding="ISO-8859-1")
@@ -194,7 +196,6 @@ def create_bouquets(channel_dict, lamedb5):
                 else:
                     l_transponder = int(l_transponder, 16)
 
-                # LAMEDB column 3; tid => transport_stream_id
                 l_tid = int(row[3], 16)
                 # LAMEDB column 4; nid => original_network_id
                 l_nid = int(row[4], 16)
@@ -211,27 +212,39 @@ def create_bouquets(channel_dict, lamedb5):
         print(f"{matched_channels} channels stored in bouqets.")
         print(f"{all_channels - matched_channels} channels cannot be stored in bouquet.")
 
+        file_merge.bouquet_merge('/home/stephenx/Dokumenty/python/Ultimo_Bouqeting/bouquets_tmp')
+
 def parse_languages(ch_languages):
     languages = ch_languages.split(",")
     del languages[-1]
     return languages
 
+def num_to_bouquet(strr):
+    modified = strr.lstrip('0')
+    return modified.upper()
+
+def hexa_to_bouquet(int_str):
+    intt = int(int_str)
+    hexaa = hex(intt)
+    hexa_str = str(hexaa)
+    return hexa_str[2:].upper()
+
 def write_to_bouquet(lamedb_row, ch_category, ch_languages, bouquets_created, ch_name):
     # LAMEDB column 5; st => service_type
-    st = int(lamedb_row[5])
+    st = lamedb_row[5]
     languages = parse_languages(ch_languages)
     for lang in languages:
         bouquet = ch_category + '_' + lang
         if bouquet in bouquets_created:
-            bouquet_file = 'bouquets/' + bouquet
+            bouquet_file = 'bouquets_tmp/' + bouquet
             with open(bouquet_file, 'a') as current_bouquet:
-                current_bouquet.write("#SERVICE "+"1:0:"+hex(st)+":"+lamedb_row[1]+":"+lamedb_row[3]+":"+lamedb_row[4]+":"+lamedb_row[2]+":0:0:0:"+"\n")
+                current_bouquet.write("#SERVICE "+"1:0:"+hexa_to_bouquet(st)+":"+num_to_bouquet(lamedb_row[1])+":"+num_to_bouquet(lamedb_row[3])+":"+num_to_bouquet(lamedb_row[4])+":"+num_to_bouquet(lamedb_row[2])+":0:0:0:"+"\n")
         else:
             bouquets_created.append(bouquet)
-            bouquet_file = 'bouquets/' + bouquet
+            bouquet_file = 'bouquets_tmp/' + bouquet
             with open(bouquet_file, 'w') as current_bouquet:
                 current_bouquet.write("<======" + ch_category.upper() + "_" + lang.upper() + "======>" + "\n")
-                current_bouquet.write("#SERVICE "+"1:0:"+hex(st)+":"+lamedb_row[1]+":"+lamedb_row[3]+":"+lamedb_row[4]+":"+lamedb_row[2]+":0:0:0:"+"\n")
+                current_bouquet.write("#SERVICE "+"1:0:"+hexa_to_bouquet(st)+":"+num_to_bouquet(lamedb_row[1])+":"+num_to_bouquet(lamedb_row[3])+":"+num_to_bouquet(lamedb_row[4])+":"+num_to_bouquet(lamedb_row[2])+":0:0:0:"+"\n")
 
 if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description='Script to create bouquets for VU+ Ultimo')
