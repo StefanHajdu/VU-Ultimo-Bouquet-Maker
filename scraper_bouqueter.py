@@ -177,7 +177,34 @@ def create_channel_dict(filename):
 def calc_dict_key_decode(sid, pos, tid, nid):
     return str(sid) + str(pos) + str(tid) + str(nid)
 
-def create_bouquets(channel_dict, lamedb5):
+def parse_config_file():
+    custom_pref = []
+    preference_active = False
+    with open("config", "r") as config_file:
+        for line in config_file:
+            if preference_active:
+                # prefs = line.split('/')
+                # custom_categories.append(prefs[0])
+                # custom_langs.append(prefs[1])
+                custom_pref.append(line[:-1].lower())
+            if line.startswith('#'):
+                preference_active = False
+                continue
+            if line.startswith("-PREFERENCES"):
+                preference_active = True
+    return custom_pref
+
+def channel_in_prefs(custom_prefs, channel):
+    for pref in custom_prefs:
+        if channel.category.lower() in pref and pref.split('/')[1] in channel.language:
+            return pref
+    return "not found"
+
+def create_bouquets(channel_dict, lamedb5, command):
+    custom_pref = []
+    if command.custom_based:
+        custom_pref = parse_config_file()
+
     bouquets_created = []
     all_channels = 0
     matched_channels = 0
@@ -204,7 +231,14 @@ def create_bouquets(channel_dict, lamedb5):
                 try:
                     channel = channel_dict[channel_dict_key]
                     matched_channels += 1
-                    write_to_bouquet(row, channel.category, channel.language, bouquets_created, channel.name)
+                    if command.custom_based:
+                        pref = channel_in_prefs(custom_pref, channel)
+                        if not pref == "not found":
+                            write_to_bouquet_custom(row, channel.name, channel.category, pref.split('/')[1], bouquets_created)
+                        else:
+                            continue
+                    if command.audio_based:
+                        write_to_bouquet(row, channel.name, channel.category, channel.language, bouquets_created, command)
                 except KeyError:
                     continue
 
@@ -212,7 +246,8 @@ def create_bouquets(channel_dict, lamedb5):
         print(f"{matched_channels} channels stored in bouqets.")
         print(f"{all_channels - matched_channels} channels cannot be stored in bouquet.")
 
-        file_merge.bouquet_merge('/home/stephenx/Dokumenty/python/Ultimo_Bouqeting/bouquets_tmp')
+        if command.audio_based:
+            file_merge.bouquet_merge('/home/stephenx/Dokumenty/python/Ultimo_Bouqeting/bouquets_tmp')
 
 def parse_languages(ch_languages):
     languages = ch_languages.split(",")
@@ -229,30 +264,60 @@ def hexa_to_bouquet(int_str):
     hexa_str = str(hexaa)
     return hexa_str[2:].upper()
 
-def write_to_bouquet(lamedb_row, ch_category, ch_languages, bouquets_created, ch_name):
+def write_to_bouquet_custom(lamedb_row, ch_name, ch_category, ch_language, bouquets_created):
+    store_path = 'bouquets/'
+    # LAMEDB column 5; st => service_type
+    st = lamedb_row[5]
+    bouquet = ch_category + '_' + ch_language
+    if bouquet in bouquets_created:
+        bouquet_file = store_path + bouquet
+        with open(bouquet_file, 'a') as current_bouquet:
+            current_bouquet.write("#SERVICE "+"1:0:"+hexa_to_bouquet(st)+":"+num_to_bouquet(lamedb_row[1])+":"+num_to_bouquet(lamedb_row[3])+":"+num_to_bouquet(lamedb_row[4])+":"+num_to_bouquet(lamedb_row[2])+":0:0:0:"+"\n")
+    else:
+        bouquets_created.append(bouquet)
+        bouquet_file = store_path + bouquet
+        with open(bouquet_file, 'w') as current_bouquet:
+            current_bouquet.write("<======" + ch_category.upper() + "_" + ch_language.upper() + "======>" + "\n")
+            current_bouquet.write("#SERVICE "+"1:0:"+hexa_to_bouquet(st)+":"+num_to_bouquet(lamedb_row[1])+":"+num_to_bouquet(lamedb_row[3])+":"+num_to_bouquet(lamedb_row[4])+":"+num_to_bouquet(lamedb_row[2])+":0:0:0:"+"\n")
+
+
+def write_to_bouquet(lamedb_row, ch_name, ch_category, ch_languages, bouquets_created, command):
+    store_path = ""
+    if command.audio_based:
+        store_path = 'bouquets_tmp/'
+    else:
+        store_path = 'bouquets/'
     # LAMEDB column 5; st => service_type
     st = lamedb_row[5]
     languages = parse_languages(ch_languages)
     for lang in languages:
         bouquet = ch_category + '_' + lang
         if bouquet in bouquets_created:
-            bouquet_file = 'bouquets_tmp/' + bouquet
+            bouquet_file = store_path + bouquet
             with open(bouquet_file, 'a') as current_bouquet:
                 current_bouquet.write("#SERVICE "+"1:0:"+hexa_to_bouquet(st)+":"+num_to_bouquet(lamedb_row[1])+":"+num_to_bouquet(lamedb_row[3])+":"+num_to_bouquet(lamedb_row[4])+":"+num_to_bouquet(lamedb_row[2])+":0:0:0:"+"\n")
         else:
             bouquets_created.append(bouquet)
-            bouquet_file = 'bouquets_tmp/' + bouquet
+            bouquet_file = store_path + bouquet
             with open(bouquet_file, 'w') as current_bouquet:
                 current_bouquet.write("<======" + ch_category.upper() + "_" + lang.upper() + "======>" + "\n")
                 current_bouquet.write("#SERVICE "+"1:0:"+hexa_to_bouquet(st)+":"+num_to_bouquet(lamedb_row[1])+":"+num_to_bouquet(lamedb_row[3])+":"+num_to_bouquet(lamedb_row[4])+":"+num_to_bouquet(lamedb_row[2])+":0:0:0:"+"\n")
 
 if __name__ == "__main__":
-    arg_parser = argparse.ArgumentParser(description='Script to create bouquets for VU+ Ultimo')
-    arg_parser.add_argument('--scrap', '-s',
-                            action='store_true')
+    arg_parser = argparse.ArgumentParser(description='Script to create bouquets for VU+ Ultimo.')
+    bouquet_setting = arg_parser.add_mutually_exclusive_group()
+    arg_parser.add_argument('-s', '--scrap',
+                            action='store_true',
+                            help='to enable scrapping function of webpage https://en.kingofsat.net. If not enabled latest data in channels.csv are used')
+    bouquet_setting.add_argument('-audio', '--audio_based',
+                            action='store_true',
+                            help='to create bouquets based on audio of channels. By default all possible bouquets are created.')
+    bouquet_setting.add_argument('-custom', '--custom_based',
+                            action='store_true',
+                            help='to create bouquets based on category and audio preferences present in config.txt file. By default all possible bouquets are created.')
     args = arg_parser.parse_args()
 
-    if (args.scrap) :
+    if args.scrap:
         # open .csv file
         with open("channels.csv", "w") as channels_csv:
             csv_writer = csv.writer(channels_csv, delimiter=';')
@@ -275,4 +340,4 @@ if __name__ == "__main__":
     print("Dictionary of scrapped channels created.")
 
     # 2. find matches between lamedb5 file and channel_dict
-    create_bouquets(channel_dict, "/home/stephenx/Dokumenty/python/Ultimo_Bouqeting/sample_data/ultimo/lamedb5")
+    create_bouquets(channel_dict, "/home/stephenx/Dokumenty/python/Ultimo_Bouqeting/sample_data/ultimo/lamedb5", args)
