@@ -27,7 +27,7 @@ def prepare_column_names(html_names):
             names.append(channel_name)
     return names
 
-# prepare Country, Category
+# prepare SID, Country, Category
 def prepare_column_same(html_list, word):
     list = []
     for item in html_list:
@@ -64,13 +64,19 @@ def get_tranponder_ids(html_frq_table):
     nid = fqr_row.find_all('td')[-3]
     return tid.text, nid.text
 
-def scrape_and_write(soup, satellite):
+def get_satellite_pos(html_frq_table):
+    fqr_row = html_frq_table.find("tr")
+    pos = fqr_row.find_all('td')[0]
+    return pos.text
+
+def scrape_and_write(soup):
     # find tables that contain channel elements
     html_tables = soup.find_all("table", class_="fl")
     for table in html_tables:
 
         html_frq_table = table.find_previous("table", class_="frq")
         tid, nid = get_tranponder_ids(html_frq_table)
+        pos = get_satellite_pos(html_frq_table)
 
         # find channel names
         html_names = table.find_all("td", class_="ch")
@@ -98,7 +104,7 @@ def scrape_and_write(soup, satellite):
         with open("channels.csv", "a") as channels_csv:
             csv_writer = csv.writer(channels_csv, delimiter=';')
             for item in range(len(names)):
-                csv_writer.writerow([sid[item], int(float(satellite[:-1])*10), tid, nid, names[item], countries[item], categories[item], audios[item]])
+                csv_writer.writerow([sid[item], int(float(pos[:-2])*10), tid, nid, names[item], countries[item], categories[item], audios[item]])
 
 def prepare_url_pos(pos):
     char_to_replace = {',': '.', '°': ''}
@@ -106,22 +112,56 @@ def prepare_url_pos(pos):
         pos = pos.replace(key, value)
     return pos
 
-def browse_and_scrape(main_url, list_of_satellites):
-    print(list_of_satellites)
-    for satellite in list_of_satellites:
-        # prepare url for scraping
-        formated_sat = prepare_url_pos(satellite)
-        url = main_url + "pos-" + formated_sat + ".php"
-        try:
-            html_text = requests.get(url).text
-            # Prepare the soup
-            soup = BeautifulSoup(html_text, "html.parser")
-            print(f"Now Scraping - {url}")
-            scrape_and_write(soup, formated_sat)
-            time.sleep(2)
-        except Exception as e:
-            return e
-    return True
+def scrap(url):
+    try:
+        html_text = requests.get(url).text
+        # Prepare the soup
+        soup = BeautifulSoup(html_text, "html.parser")
+        print(f"Now Scraping - {url}")
+        scrape_and_write(soup)
+        time.sleep(2)
+    except Exception as e:
+        return e
+
+def browse_and_scrape(main_url, command):
+    if command.frequency:
+        list_of_satellites = find_orbital_pos(satellites_xml)
+        print(list_of_satellites)
+        for satellite in list_of_satellites:
+            # prepare url for scraping
+            formated_sat = prepare_url_pos(satellite)
+            url = main_url + "pos-" + formated_sat + ".php"
+            excp = scrap(url)
+            if excp:
+                return excp
+
+    if command.packages:
+        package_list = parse_config_file("-PACKAGES")
+        print("Choose from packages you wish to create bouquets from.")
+        print("Available packages:")
+        counter = 1
+        for pack in package_list:
+            print(f"{counter}. {pack.split(',')[0]}")
+            counter += 1
+        print("\nWrite index numbers separated by ','. To select all press Enter.")
+        choosen = str(input("Select: "))
+        print('\n')
+        if not choosen:
+            for package in package_list:
+                url = package.split(',')[1]
+                excp = scrap(url)
+                if excp:
+                    return excp
+        else:
+            pack_incides = choosen.split(',')
+            for index in pack_incides:
+                if int(index)-1 >= counter or int(index) == 0:
+                    print("INPUT ERROR: Invalid input.")
+                    exit()
+                url = package_list[int(index)-1].split(',')[1]
+                excp = scrap(url)
+                if excp:
+                    return excp
 
 # find all orbital possitions available in file satellites.xml
 def find_orbital_pos(satellites_xml_path):
@@ -177,33 +217,48 @@ def create_channel_dict(filename):
 def calc_dict_key_decode(sid, pos, tid, nid):
     return str(sid) + str(pos) + str(tid) + str(nid)
 
-def parse_config_file():
+def parse_config_file(tag):
     custom_pref = []
     preference_active = False
-    with open("config", "r") as config_file:
-        for line in config_file:
-            if preference_active:
-                # prefs = line.split('/')
-                # custom_categories.append(prefs[0])
-                # custom_langs.append(prefs[1])
-                custom_pref.append(line[:-1].lower())
-            if line.startswith('#'):
-                preference_active = False
-                continue
-            if line.startswith("-PREFERENCES"):
-                preference_active = True
+    try:
+        with open("config", "r") as config_file:
+            for line in config_file:
+                if line.startswith('#'):
+                    preference_active = False
+                    continue
+                if preference_active:
+                    # prefs = line.split('/')
+                    # custom_categories.append(prefs[0])
+                    # custom_langs.append(prefs[1])
+                    if tag == '-SATELLITESXML' or tag == '-LAMEDB5':
+                        custom_pref.append(line[:-1])
+                    else:
+                        custom_pref.append(line[:-1].lower())
+                if line.startswith(tag):
+                    preference_active = True
+    except FileNotFoundError:
+        print("ERROR: No configuration file.")
+        exit()
+
     return custom_pref
 
-def channel_in_prefs(custom_prefs, channel):
+def channel_in_prefs(custom_prefs, channel, command):
     for pref in custom_prefs:
-        if channel.category.lower() in pref and pref.split('/')[1] in channel.language:
-            return pref
+        if command.tv_based:
+            if channel.category.lower() in pref and pref.split('/')[1] in channel.language:
+                return pref
+        if command.radio_based:
+            if pref.split('/')[1] in channel.language:
+                return pref
     return "not found"
+
+TV = [1, 34, 37]
+RADIO = 2
 
 def create_bouquets(channel_dict, lamedb5, command):
     custom_pref = []
     if command.custom_based:
-        custom_pref = parse_config_file()
+        custom_pref = parse_config_file("-PREFERENCES")
 
     bouquets_created = []
     all_channels = 0
@@ -227,18 +282,35 @@ def create_bouquets(channel_dict, lamedb5, command):
                 # LAMEDB column 4; nid => original_network_id
                 l_nid = int(row[4], 16)
 
+                # LAMEDB column 5; st => service_type
+                service_type = int(row[5], 16)
+
                 channel_dict_key = calc_dict_key_decode(l_sid, l_transponder, l_tid, l_nid)
                 try:
                     channel = channel_dict[channel_dict_key]
                     matched_channels += 1
                     if command.custom_based:
-                        pref = channel_in_prefs(custom_pref, channel)
+                        pref = channel_in_prefs(custom_pref, channel, command)
                         if not pref == "not found":
-                            write_to_bouquet_custom(row, channel.name, channel.category, pref.split('/')[1], bouquets_created)
+                            if command.radio_based:
+                                if service_type == RADIO:
+                                    write_to_bouquet_custom(row, channel.name, channel.category, pref.split('/')[1], bouquets_created, command, "RADIO")
+                            if command.tv_based:
+                                if service_type in TV:
+                                    write_to_bouquet_custom(row, channel.name, channel.category, pref.split('/')[1], bouquets_created, command, "TV")
                         else:
                             continue
-                    if command.audio_based:
-                        write_to_bouquet(row, channel.name, channel.category, channel.language, bouquets_created, command)
+                    else:
+                        if command.radio_based:
+                            if service_type == RADIO:
+                                write_to_bouquet(row, channel.name, channel.category, channel.language, bouquets_created, command, "RADIO")
+                            else:
+                                continue
+                        if command.tv_based:
+                            if service_type in TV:
+                                write_to_bouquet(row, channel.name, channel.category, channel.language, bouquets_created, command, "TV")
+                            else:
+                                continue
                 except KeyError:
                     continue
 
@@ -264,11 +336,18 @@ def hexa_to_bouquet(int_str):
     hexa_str = str(hexaa)
     return hexa_str[2:].upper()
 
-def write_to_bouquet_custom(lamedb_row, ch_name, ch_category, ch_language, bouquets_created):
+DESCRIPTION_COUNT = 0
+
+def write_to_bouquet_custom(lamedb_row, ch_name, ch_category, ch_language, bouquets_created, command, service_type):
     store_path = 'bouquets/'
     # LAMEDB column 5; st => service_type
     st = lamedb_row[5]
-    bouquet = ch_category + '_' + ch_language
+    if command.tv_based:
+        bouquet = "userbouquet." + ch_category + '_' + ch_language + ".tv"
+        tag = ch_category + '_' + ch_language
+    if command.radio_based:
+        bouquet = "userbouquet." + service_type + '_' + ch_language + ".radio"
+        tag = service_type + '_' + ch_language
     if bouquet in bouquets_created:
         bouquet_file = store_path + bouquet
         with open(bouquet_file, 'a') as current_bouquet:
@@ -277,12 +356,15 @@ def write_to_bouquet_custom(lamedb_row, ch_name, ch_category, ch_language, bouqu
         bouquets_created.append(bouquet)
         bouquet_file = store_path + bouquet
         with open(bouquet_file, 'w') as current_bouquet:
-            current_bouquet.write("<======" + ch_category.upper() + "_" + ch_language.upper() + "======>" + "\n")
+            global DESCRIPTION_COUNT
+            DESCRIPTION_COUNT += 1
+            current_bouquet.write("#SERVICE 1:64:" + hexa_to_bouquet(DESCRIPTION_COUNT) + ":0:0:0:0:0:0:0::" + "<====== " + tag + " ======>" + "\n")
+            current_bouquet.write("#DESCRIPTION " + "<====== " + tag + " ======>" + "\n")
             current_bouquet.write("#SERVICE "+"1:0:"+hexa_to_bouquet(st)+":"+num_to_bouquet(lamedb_row[1])+":"+num_to_bouquet(lamedb_row[3])+":"+num_to_bouquet(lamedb_row[4])+":"+num_to_bouquet(lamedb_row[2])+":0:0:0:"+"\n")
 
-
-def write_to_bouquet(lamedb_row, ch_name, ch_category, ch_languages, bouquets_created, command):
+def write_to_bouquet(lamedb_row, ch_name, ch_category, ch_languages, bouquets_created, command, service_type):
     store_path = ""
+    bouquet = ""
     if command.audio_based:
         store_path = 'bouquets_tmp/'
     else:
@@ -290,8 +372,16 @@ def write_to_bouquet(lamedb_row, ch_name, ch_category, ch_languages, bouquets_cr
     # LAMEDB column 5; st => service_type
     st = lamedb_row[5]
     languages = parse_languages(ch_languages)
+    # to get rid duplicates in list, we use set (data structure that cannot contain duplicates)
+    languages = list(set(languages))
     for lang in languages:
-        bouquet = ch_category + '_' + lang
+        if command.tv_based:
+            bouquet = "userbouquet." + ch_category + '_' + lang + ".tv"
+            tag = ch_category + '_' + lang
+        if command.radio_based:
+            bouquet = "userbouquet." + service_type + '_' + lang + ".radio"
+            tag = service_type + '_' + lang
+
         if bouquet in bouquets_created:
             bouquet_file = store_path + bouquet
             with open(bouquet_file, 'a') as current_bouquet:
@@ -300,12 +390,17 @@ def write_to_bouquet(lamedb_row, ch_name, ch_category, ch_languages, bouquets_cr
             bouquets_created.append(bouquet)
             bouquet_file = store_path + bouquet
             with open(bouquet_file, 'w') as current_bouquet:
-                current_bouquet.write("<======" + ch_category.upper() + "_" + lang.upper() + "======>" + "\n")
+                global DESCRIPTION_COUNT
+                DESCRIPTION_COUNT += 1
+                current_bouquet.write("#SERVICE 1:64:" + hexa_to_bouquet(DESCRIPTION_COUNT) + ":0:0:0:0:0:0:0::" + "<====== " + tag + " ======>" + "\n")
+                current_bouquet.write("#DESCRIPTION " + "<====== " + tag + " ======>" + "\n")
                 current_bouquet.write("#SERVICE "+"1:0:"+hexa_to_bouquet(st)+":"+num_to_bouquet(lamedb_row[1])+":"+num_to_bouquet(lamedb_row[3])+":"+num_to_bouquet(lamedb_row[4])+":"+num_to_bouquet(lamedb_row[2])+":0:0:0:"+"\n")
 
 if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description='Script to create bouquets for VU+ Ultimo.')
     bouquet_setting = arg_parser.add_mutually_exclusive_group()
+    bouquet_setting_serv_type = arg_parser.add_mutually_exclusive_group(required=True)
+    scrapping_setting = arg_parser.add_mutually_exclusive_group(required=True)
     arg_parser.add_argument('-s', '--scrap',
                             action='store_true',
                             help='to enable scrapping function of webpage https://en.kingofsat.net. If not enabled latest data in channels.csv are used')
@@ -315,6 +410,18 @@ if __name__ == "__main__":
     bouquet_setting.add_argument('-custom', '--custom_based',
                             action='store_true',
                             help='to create bouquets based on category and audio preferences present in config.txt file. By default all possible bouquets are created.')
+    bouquet_setting_serv_type.add_argument('-radio', '--radio_based',
+                            action='store_true',
+                            help='MANDATORY! To create RADIO bouquets.')
+    bouquet_setting_serv_type.add_argument('-tv', '--tv_based',
+                            action='store_true',
+                            help='MANDATORY! To create TV bouquets.')
+    scrapping_setting.add_argument('-freq', '--frequency',
+                            action='store_true',
+                            help='MANDATORY! To scrap webpage KingOfSat by frequency.')
+    scrapping_setting.add_argument('-pack', '--packages',
+                            action='store_true',
+                            help='MANDATORY! To scrap webpage KingOfSat by packages.')
     args = arg_parser.parse_args()
 
     if args.scrap:
@@ -323,11 +430,10 @@ if __name__ == "__main__":
             csv_writer = csv.writer(channels_csv, delimiter=';')
             csv_writer.writerow(["SID", "POS", "TID", "NID", "Name", "Country", "Category", "Audio"])
         main_url = "https://en.kingofsat.net/"
-        satellites_xml = "/home/stephenx/Dokumenty/python/Ultimo_Bouqeting/sample_data/ultimo/satellites.xml"
-        list_of_satellites = find_orbital_pos(satellites_xml)
+        satellites_xml = parse_config_file('-SATELLITESXML')[0]
         print("KingOfSat.net Web scraping has begun")
-        result = browse_and_scrape(main_url, list_of_satellites)
-        if result == True:
+        result = browse_and_scrape(main_url, args)
+        if not result:
             print("Web scraping is now complete!")
             print("All channel info is stored at channels.csv.")
         else:
@@ -340,4 +446,5 @@ if __name__ == "__main__":
     print("Dictionary of scrapped channels created.")
 
     # 2. find matches between lamedb5 file and channel_dict
-    create_bouquets(channel_dict, "/home/stephenx/Dokumenty/python/Ultimo_Bouqeting/sample_data/ultimo/lamedb5", args)
+    lamedb5_path = parse_config_file('-LAMEDB5')
+    create_bouquets(channel_dict, lamedb5_path[0], args)
