@@ -319,7 +319,10 @@ def create_bouquets(channel_dict, lamedb5, command):
         print(f"{all_channels - matched_channels} channels cannot be stored in bouquet.")
 
         if command.audio_based:
-            file_merge.bouquet_merge('/home/stephenx/Dokumenty/python/Ultimo_Bouqeting/bouquets_tmp')
+            file_merge.audio_merge('bouquets_tmp', command)
+
+        if command.merge:
+            file_merge.merge()
 
 def parse_languages(ch_languages):
     languages = ch_languages.split(",")
@@ -345,9 +348,11 @@ def write_to_bouquet_custom(lamedb_row, ch_name, ch_category, ch_language, bouqu
     if command.tv_based:
         bouquet = "userbouquet." + ch_category + '_' + ch_language + ".tv"
         tag = ch_category + '_' + ch_language
+        name = ch_category + ' ' + ch_language + ' (TV)'
     if command.radio_based:
         bouquet = "userbouquet." + service_type + '_' + ch_language + ".radio"
-        tag = service_type + '_' + ch_language
+        tag = ch_category + '_' + ch_language
+        name = service_type + ' ' + ch_language + ' (RADIO)'
     if bouquet in bouquets_created:
         bouquet_file = store_path + bouquet
         with open(bouquet_file, 'a') as current_bouquet:
@@ -358,6 +363,7 @@ def write_to_bouquet_custom(lamedb_row, ch_name, ch_category, ch_language, bouqu
         with open(bouquet_file, 'w') as current_bouquet:
             global DESCRIPTION_COUNT
             DESCRIPTION_COUNT += 1
+            current_bouquet.write(f"#NAME {name.upper()}\n")
             current_bouquet.write("#SERVICE 1:64:" + hexa_to_bouquet(DESCRIPTION_COUNT) + ":0:0:0:0:0:0:0::" + "<====== " + tag + " ======>" + "\n")
             current_bouquet.write("#DESCRIPTION " + "<====== " + tag + " ======>" + "\n")
             current_bouquet.write("#SERVICE "+"1:0:"+hexa_to_bouquet(st)+":"+num_to_bouquet(lamedb_row[1])+":"+num_to_bouquet(lamedb_row[3])+":"+num_to_bouquet(lamedb_row[4])+":"+num_to_bouquet(lamedb_row[2])+":0:0:0:"+"\n")
@@ -372,29 +378,38 @@ def write_to_bouquet(lamedb_row, ch_name, ch_category, ch_languages, bouquets_cr
     # LAMEDB column 5; st => service_type
     st = lamedb_row[5]
     languages = parse_languages(ch_languages)
-    # to get rid duplicates in list, we use set (data structure that cannot contain duplicates)
+    # to get rid of duplicates in list, we use set (data structure that cannot contain duplicates)
     languages = list(set(languages))
     for lang in languages:
         if command.tv_based:
             bouquet = "userbouquet." + ch_category + '_' + lang + ".tv"
             tag = ch_category + '_' + lang
+            name = ch_category + ' ' + lang + ' (TV)'
         if command.radio_based:
             bouquet = "userbouquet." + service_type + '_' + lang + ".radio"
             tag = service_type + '_' + lang
+            name = ch_category + ' ' + lang + ' (RADIO)'
 
         if bouquet in bouquets_created:
             bouquet_file = store_path + bouquet
             with open(bouquet_file, 'a') as current_bouquet:
-                current_bouquet.write("#SERVICE "+"1:0:"+hexa_to_bouquet(st)+":"+num_to_bouquet(lamedb_row[1])+":"+num_to_bouquet(lamedb_row[3])+":"+num_to_bouquet(lamedb_row[4])+":"+num_to_bouquet(lamedb_row[2])+":0:0:0:"+"\n")
+                if len(bouquets_created) > 1:
+                    current_bouquet.write("#SERVICE "+"1:0:"+hexa_to_bouquet(st)+":"+num_to_bouquet(lamedb_row[1])+":"+num_to_bouquet(lamedb_row[3])+":"+num_to_bouquet(lamedb_row[4])+":"+num_to_bouquet(lamedb_row[2])+":0:0:0:"+"\n")
         else:
             bouquets_created.append(bouquet)
             bouquet_file = store_path + bouquet
             with open(bouquet_file, 'w') as current_bouquet:
                 global DESCRIPTION_COUNT
                 DESCRIPTION_COUNT += 1
-                current_bouquet.write("#SERVICE 1:64:" + hexa_to_bouquet(DESCRIPTION_COUNT) + ":0:0:0:0:0:0:0::" + "<====== " + tag + " ======>" + "\n")
-                current_bouquet.write("#DESCRIPTION " + "<====== " + tag + " ======>" + "\n")
-                current_bouquet.write("#SERVICE "+"1:0:"+hexa_to_bouquet(st)+":"+num_to_bouquet(lamedb_row[1])+":"+num_to_bouquet(lamedb_row[3])+":"+num_to_bouquet(lamedb_row[4])+":"+num_to_bouquet(lamedb_row[2])+":0:0:0:"+"\n")
+                if command.audio_based:
+                    current_bouquet.write("#SERVICE 1:64:" + hexa_to_bouquet(DESCRIPTION_COUNT) + ":0:0:0:0:0:0:0::" + "<====== " + tag + " ======>" + "\n")
+                    current_bouquet.write("#DESCRIPTION " + "<====== " + tag + " ======>" + "\n")
+                    current_bouquet.write("#SERVICE "+"1:0:"+hexa_to_bouquet(st)+":"+num_to_bouquet(lamedb_row[1])+":"+num_to_bouquet(lamedb_row[3])+":"+num_to_bouquet(lamedb_row[4])+":"+num_to_bouquet(lamedb_row[2])+":0:0:0:"+"\n")
+                else:
+                    current_bouquet.write(f"#NAME {name.upper()}\n")
+                    current_bouquet.write("#SERVICE 1:64:" + hexa_to_bouquet(DESCRIPTION_COUNT) + ":0:0:0:0:0:0:0::" + "<====== " + tag + " ======>" + "\n")
+                    current_bouquet.write("#DESCRIPTION " + "<====== " + tag + " ======>" + "\n")
+                    current_bouquet.write("#SERVICE "+"1:0:"+hexa_to_bouquet(st)+":"+num_to_bouquet(lamedb_row[1])+":"+num_to_bouquet(lamedb_row[3])+":"+num_to_bouquet(lamedb_row[4])+":"+num_to_bouquet(lamedb_row[2])+":0:0:0:"+"\n")
 
 if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description='Script to create bouquets for VU+ Ultimo.')
@@ -404,6 +419,9 @@ if __name__ == "__main__":
     arg_parser.add_argument('-s', '--scrap',
                             action='store_true',
                             help='to enable scrapping function of webpage https://en.kingofsat.net. If not enabled latest data in channels.csv are used')
+    arg_parser.add_argument('-m', '--merge',
+                            action='store_true',
+                            help="To merge all bouquets in directory bouquets. It will create single bouquet named by user.")
     bouquet_setting.add_argument('-audio', '--audio_based',
                             action='store_true',
                             help='to create bouquets based on audio of channels. By default all possible bouquets are created.')
