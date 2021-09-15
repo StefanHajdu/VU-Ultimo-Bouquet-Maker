@@ -1,0 +1,31 @@
+# Path to lamedb5 file
+-LAMEDB5
+/home/stephenx/Dokumenty/python/Ultimo_Bouqeting/sample_data/ultimo/lamedb5
+# Path to satellites.xml file
+-SATELLITESXML
+/home/stephenx/Dokumenty/python/Ultimo_Bouqeting/sample_data/ultimo/satellites.xml
+# Write your channel preferences under tag "-PREFERENCES".
+# For TV Channels:
+# Single line means single preference.
+# Each channel preference must be in format: Category/Audio_track (eg. Documentaries/eng).
+# Letter size does not matter.
+# What matters is that Category and Audio must be written in format as seen on https://en.kingofsat.net.
+# That means use 3 letter abreviation for Audio track.
+# For RADIO Channels:
+# Single line means single preference.
+# Each radio preference starts with key word "radio", format: radio/Audio_track (eg. radio/eng).
+# Letter size does not matter.
+# What matters is that Audio must be written in format as seen on https://en.kingofsat.net.
+# That means use 3 letter abreviation for Audio track.
+# If you do not follow these rules no bouquets will be created.
+-PREFERENCES
+General/cze
+General/pol
+General/slk
+Movies/ger
+# Below is list of available satellite packages
+-PACKAGES
+SkyLink,https://en.kingofsat.net/pack-skylink.php
+Polsat Box,https://en.kingofsat.net/pack-polsat.php
+Canal Digitaal,https://en.kingofsat.net/pack-canaldigitaal.php
+SKY Deutchland,https://en.kingofsat.net/pack-skygermany.php
